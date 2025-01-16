@@ -13,16 +13,13 @@ from asyncio import sleep
 import random
 
 # At the top with your other imports:
+from data_manager import server_data, get_user_data, save_data
 from games.guess_the_number import play_guess_the_number
+from games.trivia import play_trivia
+from games.coin import play_coinflip
 
 # Then modify your RANDOM_EVENTS list:
-RANDOM_EVENTS = [
-    "Hello adventurers!",
-    "Time for some fun!",
-    "Who's ready for an event?",
-    play_guess_the_number  # Now this will be properly imported
-]
-# Dictionary to store loaded games
+
 LOADED_GAMES = {}
 
 # Function to load all games dynamically
@@ -45,10 +42,9 @@ BOT_TOKEN = config["bot_token"]
 BOT_OWNER_ID = int(config["owner_id"])
 
 RANDOM_EVENTS = [
-    "Hello adventurers!",
-    "Time for some fun!",
-    "Who's ready for an event?",
+    play_coinflip,
     play_guess_the_number,  # Reference the game function
+    play_trivia
 ]
 
 
@@ -60,24 +56,7 @@ intents.members = True
 bot = commands.Bot(command_prefix="/", intents=intents)
 data_file = "server_user_data.json"
 
-def load_data():
-    try:
-        with open(data_file, "r") as f:
-            data = json.load(f)
-            # Update existing server data to include background if not present
-            for server_id in data:
-                for user_id in data[server_id]:
-                    if "background_url" not in data[server_id][user_id]:
-                        data[server_id][user_id]["background_url"] = None
-            return data
-    except FileNotFoundError:
-        return {}
 
-def save_data(data):
-    with open(data_file, "w") as f:
-        json.dump(data, f, indent=4)
-
-server_data = load_data()
 
 def exp_to_next_level(level):
     return 100 * math.pow(1.8, level - 1)
@@ -85,22 +64,7 @@ def exp_to_next_level(level):
 def calculate_currency(level):
     return int(50 * (1.00 ** (level - 1)))
 
-def get_user_data(server_id, user_id):
-    server_id = str(server_id)
-    user_id = str(user_id)
-    
-    if server_id not in server_data:
-        server_data[server_id] = {}
-    
-    if user_id not in server_data[server_id]:
-        server_data[server_id][user_id] = {
-            "level": 0,
-            "exp": 0,
-            "currency": 0,
-            "background_url": None
-        }
-    
-    return server_data[server_id][user_id]
+
 
 @bot.event
 async def on_ready():
@@ -185,37 +149,32 @@ async def remove_event_channel(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 async def test_event(interaction: discord.Interaction):
     try:
-        await interaction.response.send_message("Triggering test event...", ephemeral=True)
         channel_id = RANDOM_CHANNELS.get(str(interaction.guild_id))
-        
         if not channel_id:
-            await interaction.followup.send("No event channel set for this server. Use /set_event_channel first!", ephemeral=True)
+            await interaction.response.send_message("No event channel set. Use /set_event_channel first!", ephemeral=True)
             return
             
         channel = bot.get_channel(int(channel_id))
         if not channel:
-           print(f"Channel ID {channel_id} could not be found. Does the bot have access?")
-           await interaction.followup.send("Could not find the event channel. Please set it again using /set_event_channel", ephemeral=True)
-           return
+            await interaction.response.send_message("Could not find the event channel. Please set it again.", ephemeral=True)
+            return
 
-        # Send the test event
-        warning_msg = await channel.send("⚠️ Test event approaching in 5 seconds! ⚠️")
-        await sleep(5)
+        await interaction.response.send_message("Starting event...", ephemeral=True)
         
-        # Get a random event
+        # Send warning
+        await channel.send("⚠️ Event starting in 5 seconds! ⚠️")
+        await sleep(5)  # Make sure asyncio is imported at the top of your main bot file
+        
+        # Start event
         event = random.choice(RANDOM_EVENTS)
-        
-        # Check if the event is a function (game) or a message
         if callable(event):
-            await event(channel)  # Call the function with the channel parameter
+            await event(channel)
         else:
-            await channel.send(f"🎉 **Test Event!** 🎉\n{event}")
-            
-        await warning_msg.delete()
+            await channel.send(f"🎉 **Event!** 🎉\n{event}")
         
     except Exception as e:
-        await interaction.followup.send(f"An error occurred: {e}", ephemeral=True)
         print(f"Error in test_event: {e}")
+        await interaction.followup.send("An error occurred. Please try again.", ephemeral=True)
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")

@@ -3,7 +3,7 @@ import os
 import random
 import discord
 from discord.ext import commands, tasks
-from discord import app_commands
+from discord import app_commands, Interaction
 import json
 import math
 import aiohttp
@@ -17,6 +17,11 @@ from data_manager import server_data, get_user_data, save_data
 from games.guess_the_number import play_guess_the_number
 from games.trivia import play_trivia
 from games.coin import play_coinflip
+from games.br import start_battle_royale
+from games.ttt import start_tictactoe
+from gamble.upordown import play_gamble
+from gamble.gambling import play_coinflip, play_dice, play_colorwheel
+
 
 # Then modify your RANDOM_EVENTS list:
 
@@ -44,7 +49,9 @@ BOT_OWNER_ID = int(config["owner_id"])
 RANDOM_EVENTS = [
     play_coinflip,
     play_guess_the_number,  # Reference the game function
-    play_trivia
+    play_trivia,
+    start_battle_royale,
+    start_tictactoe
 ]
 
 
@@ -99,24 +106,30 @@ async def on_message(message):
 
 
 
-@tasks.loop(minutes=10)
+@tasks.loop(minutes=1)
 async def random_event():
     print("Random event loop triggered")  # Debug print
     for guild_id, channel_id in RANDOM_CHANNELS.items():
         try:
-            channel = bot.get_channel(int(channel_id))  # Make sure channel_id is converted to int
+            channel = bot.get_channel(int(channel_id))
             if channel:
                 print(f"Sending event to channel {channel.name}")  # Debug print
+                
                 # Send warning message
                 warning_msg = await channel.send("⚠️ A random event is approaching in 5 seconds! ⚠️")
                 await sleep(5)  # Wait 5 seconds
                 
-                # Send the actual event
-                event_message = random.choice(RANDOM_EVENTS)
-                await channel.send(f"🎉 **Random Event!** 🎉\n{event_message}")
+                # Get and handle the random event
+                event = random.choice(RANDOM_EVENTS)
+                if callable(event):  # Check if the event is a function
+                    await event(channel)  # Call the function with channel parameter
+                else:
+                    # If it's a string message, send it directly
+                    await channel.send(f"🎉 **Random Event!** 🎉\n{event}")
                 
                 # Delete the warning message (optional)
                 await warning_msg.delete()
+                
         except Exception as e:
             print(f"Error in random event for guild {guild_id}: {e}")
 
@@ -185,6 +198,127 @@ async def on_ready():
         print("Random event loop started.")
     except Exception as e:
         print(f"Error syncing commands: {e}")
+
+# Constants for choices
+COIN_CHOICES = ["heads", "tails"]
+DICE_NUMBERS = list(range(2, 13))  # 2-12
+COLOR_CHOICES = ["red", "black", "green"]
+
+# Command for Coinflip
+@bot.tree.command(name="coinflip", description="Bet on heads or tails!")
+@app_commands.describe(bet="The amount to bet", choice="Your choice: heads or tails")
+async def coinflip(
+    interaction: Interaction,
+    bet: app_commands.Range[int, 10, None],  # Minimum bet of 10
+    choice: str,
+):
+    await play_coinflip(interaction, bet, choice)
+
+@coinflip.autocomplete("choice")
+async def coinflip_choice_autocomplete(
+    interaction: Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    return [
+        app_commands.Choice(name=choice, value=choice)
+        for choice in COIN_CHOICES
+        if current.lower() in choice.lower()
+    ]
+
+# Command for Dice
+@bot.tree.command(name="dice2", description="Bet on the dice roll outcome!")
+@app_commands.describe(
+    bet="The amount to bet",
+    choice="Bet type: over, under, or exact",
+    number="The number to bet on (2-12)"
+)
+async def dice(
+    interaction: Interaction,
+    bet: app_commands.Range[int, 10, None],  # Minimum bet of 10
+    choice: str,
+    number: int,
+):
+    await play_dice(interaction, bet, choice, number)
+
+@dice.autocomplete("choice")
+async def dice_choice_autocomplete(
+    interaction: Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    return [
+        app_commands.Choice(name=choice, value=choice)
+        for choice in ["over", "under", "exact"]
+        if current.lower() in choice.lower()
+    ]
+
+@dice.autocomplete("number")
+async def dice_number_autocomplete(
+    interaction: Interaction,
+    current: str,
+) -> list[app_commands.Choice[int]]:
+    return [
+        app_commands.Choice(name=str(num), value=num)
+        for num in DICE_NUMBERS
+        if current.isdigit() and str(num).startswith(current)
+    ]
+
+# Command for Color Wheel
+@bot.tree.command(name="colorwheel", description="Bet on the color wheel!")
+@app_commands.describe(bet="The amount to bet", color="Pick a color: red, black, or green")
+async def colorwheel(
+    interaction: Interaction,
+    bet: app_commands.Range[int, 10, None],  # Minimum bet of 10
+    color: str,
+):
+    await play_colorwheel(interaction, bet, color)
+
+@colorwheel.autocomplete("color")
+async def colorwheel_color_autocomplete(
+    interaction: Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    return [
+        app_commands.Choice(name=color, value=color)
+        for color in COLOR_CHOICES
+        if current.lower() in color.lower()
+    ]
+
+# Add this with your other constants at the top of main.py
+ROLL_NUMBERS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
+
+
+@bot.tree.command(name="dice", description="Bet currency on a number game")
+@app_commands.describe(
+    bet="Amount of currency to bet",
+    roll_type="Choose to roll above or below a number",
+    roll_number="Pick a target number"
+)
+async def gamble(
+    interaction: discord.Interaction, 
+    bet: app_commands.Range[int, 10, None],  # Minimum bet of 10
+    roll_type: str,
+    roll_number: int
+):
+    await play_gamble(interaction, bet, roll_type, roll_number)
+
+@gamble.autocomplete('roll_type')
+async def gamble_roll_type_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    choices = [
+        app_commands.Choice(name="roll above", value="roll above"),
+        app_commands.Choice(name="roll below", value="roll below")
+    ]
+    return choices
+
+@gamble.autocomplete('roll_number')
+async def gamble_number_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[int]]:
+    return [app_commands.Choice(name=str(num), value=num) for num in ROLL_NUMBERS]
 
 @bot.tree.command(name="balance", description="Check your currency balance.")
 async def balance(interaction: discord.Interaction):

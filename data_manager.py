@@ -13,7 +13,8 @@ class LevelingConfig:
     EXP_MULTIPLIER = 1.8  
     CURRENCY_BASE = 50  
     CURRENCY_MULTIPLIER = 1.00  
-    EXP_PER_MESSAGE = 3  
+    EXP_PER_MESSAGE = 3 # ✅ REDUCED EXP TO SLOW DOWN LEVEL-UPS
+ 
 
 def load_data():
     try:
@@ -128,19 +129,20 @@ def get_user_data(server_id, user_id):
         }
     return server_data[server_id][user_id]
 
-def exp_to_next_level(level: int) -> int:
-    """Calculate experience needed for next level"""
-    return int(LevelingConfig.EXP_BASE * math.pow(LevelingConfig.EXP_MULTIPLIER, level))
+
 
 def calculate_reward(level: int) -> int:
     """Calculate currency reward for reaching a new level"""
     return int(LevelingConfig.CURRENCY_BASE * math.pow(LevelingConfig.CURRENCY_MULTIPLIER, level))
 
-def calculate_exp_for_level(level: int) -> int:
-    """Calculate experience needed for a specific level"""
-    if level <= 0:
-        return 0
-    return int(LevelingConfig.EXP_BASE * math.pow(LevelingConfig.EXP_MULTIPLIER, level - 1))
+def exp_to_next_level(level: int) -> int:
+    """Corrects EXP requirement calculation to ensure proper leveling."""
+    if level == 0:
+        return 50  # Base EXP for Level 1
+    return int(50 * (1.5 ** (level)))  # Ensures exponential scaling
+
+
+
 
 def calculate_total_exp_for_level(level: int) -> int:
     """Calculate total experience needed up to a specific level"""
@@ -152,11 +154,21 @@ def calculate_total_exp_for_level(level: int) -> int:
     return total
 
 def calculate_level(exp: int) -> int:
-    """Calculate level based on total experience points"""
+    """Calculate correct level based on total experience points, preventing multiple level-ups per message."""
     level = 0
-    while exp >= exp_to_next_level(level + 1):
+    next_level_exp = exp_to_next_level(level + 1)
+
+    while exp >= next_level_exp:  
         level += 1
+        next_level_exp = exp_to_next_level(level + 1)
+
+        # ✅ Stop loop to prevent skipping multiple levels
+        if exp < next_level_exp:
+            break
+
     return level
+
+
 
 def calculate_level_progress(exp: int) -> Tuple[int, int, float]:
     """Calculate progress towards next level"""
@@ -211,7 +223,7 @@ def get_user_level(server_id, user_id) -> int:
     return get_user_data(server_id, user_id)["level"]
 
 def update_exp(guild_id: str, user_id: str, exp_gain: int):
-    """Update user EXP and handle level-up properly."""
+    """Update user EXP and level while ensuring EXP resets correctly after level-up."""
     if guild_id not in server_data:
         server_data[guild_id] = {}
 
@@ -219,18 +231,38 @@ def update_exp(guild_id: str, user_id: str, exp_gain: int):
         server_data[guild_id][user_id] = {"level": 0, "exp": 0, "currency": 0}
 
     user = server_data[guild_id][user_id]
-
     old_exp = user["exp"]
-    old_level = calculate_level(old_exp)
+    old_level = user["level"]
 
-    user["exp"] += exp_gain  # ✅ Add EXP properly
-    new_level = calculate_level(user["exp"])
+    print(f"⚠️ BEFORE: User {user_id} - Level {old_level} - EXP: {old_exp}")
 
-    user["level"] = new_level  # ✅ Update level in database
+    # ✅ Add EXP properly
+    user["exp"] += exp_gain  
 
-    save_data(server_data)  # ✅ Save data
+    leveled_up = False
+    while user["exp"] >= exp_to_next_level(user["level"]):
+        required_exp = exp_to_next_level(user["level"])
 
-    return old_level < new_level  # ✅ Returns True if level-up happens
+        # ✅ EXP is reset to 0 after level-up
+        user["exp"] -= required_exp
+        user["level"] += 1
+        leveled_up = True
+
+        print(f"🎉 User {user_id} leveled up to Level {user['level']}! (EXP reset to {user['exp']})")
+
+    # ✅ Prevent EXP from exceeding the cap
+    if user["exp"] >= exp_to_next_level(user["level"]):
+        user["exp"] = exp_to_next_level(user["level"]) - 1
+
+    print(f"⚠️ AFTER: User {user_id} - Level {user['level']} - EXP: {user['exp']}")
+
+    save_data(server_data)
+    return leveled_up
+
+
+
+
+
 
 
 

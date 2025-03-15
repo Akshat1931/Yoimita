@@ -100,8 +100,7 @@ data_file = "server_user_data.json"
 
 
 
-def exp_to_next_level(level):
-    return 100 * math.pow(1.8, level - 1)
+
 
 def calculate_currency(level):
     return int(50 * (1.00 ** (level - 1)))
@@ -120,44 +119,39 @@ async def on_ready():
 async def on_message(message):
     if message.author.bot:
         return
-    
+
     server_id = str(message.guild.id)
     user_id = str(message.author.id)
-    
+
     user_data = get_user_data(server_id, user_id)
-    current_exp = user_data["exp"]
-    
-    old_level = calculate_level(current_exp)
-    
-    new_exp = current_exp + LevelingConfig.EXP_PER_MESSAGE
-    
-    update_exp(server_id, user_id, new_exp)
-    new_level = calculate_level(new_exp)
-    
-    if new_level > old_level:
-        reward = calculate_reward(new_level)
+    old_level = user_data["level"]
+
+    # ✅ Only add the defined EXP per message
+    leveled_up = update_exp(server_id, user_id, LevelingConfig.EXP_PER_MESSAGE)
+
+    # ✅ Debugging print to verify EXP increment
+    print(f"🔹 User {message.author} gained {LevelingConfig.EXP_PER_MESSAGE} EXP. New Total: {get_user_exp(server_id, user_id)}")
+
+    if leveled_up:
+        reward = calculate_reward(old_level + 1)
         update_rubles(server_id, user_id, reward)
-        await message.channel.send(f"🎉 {message.author.mention} leveled up to Level {new_level} and earned {reward} rubles!")
+        await message.channel.send(f"🎉 {message.author.mention} leveled up to **Level {old_level + 1}** and earned {reward} rubles!")
 
-    await bot.process_commands(message)
+        # Assign role after level-up
+        role_manager = RoleManager()
+        await role_manager.handle_role_update(message.author, old_level + 1)
 
-
-
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    user_data = get_user_data(message.guild.id, message.author.id)
-    
-    # Update daily messages
-    user_data["daily_messages"] = user_data.get("daily_messages", 0) + 1
-    
-    # Update weekly messages
-    user_data["weekly_messages"] = user_data.get("weekly_messages", 0) + 1
-    
+    # Track daily & weekly messages
+    user_data["daily_msg"] += 1
+    user_data["weekly_msg"] += 1
     save_data(server_data)
+
     await bot.process_commands(message)
+
+
+
+
+
 
 
 @tasks.loop(minutes=10)
@@ -1590,14 +1584,7 @@ async def handle_commission(interaction, commission_type):
             ephemeral=True
         )
 
-@bot.event
-async def on_message(message):
-    if message.channel.id in TRACKED_CHANNEL_IDS and not message.author.bot:
-        user_data = get_user_data(message.guild.id, message.author.id)
-        user_data["daily_messages"] = user_data.get("daily_messages", 0) + 1
-        user_data["weekly_messages"] = user_data.get("weekly_messages", 0) + 1
-        save_data(server_data)
-    await bot.process_commands(message)
+
 
 @bot.tree.command(name="mines", description="Play Mines!")
 @app_commands.describe(

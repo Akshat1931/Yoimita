@@ -41,23 +41,8 @@ class Leveling(commands.Cog):
             if role and role not in member.roles:
                 await member.add_roles(role)
 
-    async def level_up(self, member, new_exp):
-        old_level = self.get_level_from_exp(self.user_data[str(member.id)]["exp"])
-        new_level = self.get_level_from_exp(new_exp)
-        if new_level > old_level:
-            await self.update_roles(member, new_level)
-            await member.send(f"🎉 Congratulations! You've leveled up to Level {new_level}!")
+ 
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot:
-            return
-        user_id = str(message.author.id)
-        self.user_data.setdefault(user_id, {"level": 0, "exp": 0})
-        self.user_data[user_id]["exp"] += 3
-        self.user_data[user_id]["level"] = self.get_level_from_exp(self.user_data[user_id]["exp"])
-        await self.level_up(message.author, self.user_data[user_id]["exp"])
-        self.save_json(self.user_data_file, self.user_data)
 
     @commands.command(name="set_max_level")
     @commands.has_permissions(administrator=True)
